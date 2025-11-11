@@ -1,0 +1,29 @@
+# Build and install artifacts
+build/
+install/
+log/
+
+# Colcon cache and overlays
+.colcon/
+**/colcon_command_prefix_build.sh*
+**/colcon_build.rc
+
+# Generated environment/setup files
+**/local_setup.*
+**/setup.*
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Editor/OS files
+*.swp
+*.swo
+.DS_Store
+.vscode/
+.idea/
+
+# Data and large assets
+autoware_map/
+data/
