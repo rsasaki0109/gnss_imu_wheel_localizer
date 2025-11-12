@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: ROS 2 CI
+        uses: ros-tooling/action-ros-ci@v0.3
+        with:
+          target-ros2-distro: humble
+          package-name: gnss_imu_wheel_localizer
+          colcon-defaults: |
+            {
+              "build": {
+                "mixin": ["release"]
+              },
+              "test": {
+                "mixin": ["release"]
+              }
+            }
