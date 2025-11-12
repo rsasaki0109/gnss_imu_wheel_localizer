@@ -4,6 +4,7 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <filesystem>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -14,6 +15,8 @@
 #include <tf2/LinearMath/Matrix3x3.h>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+
+#include <autoware_vehicle_msgs/msg/velocity_report.hpp>
 
 namespace gnss_imu_wheel_localizer
 {
@@ -70,6 +73,33 @@ GnssImuWheelLocalizerNode::GnssImuWheelLocalizerNode(const rclcpp::NodeOptions &
     origin_initialized_ = true;
   }
 
+  if (params_.enable_pose_csv_logging) {
+    if (params_.pose_csv_path.empty()) {
+      RCLCPP_WARN(get_logger(), "Pose CSV logging enabled but pose_csv_path is empty. Disabling logging.");
+      params_.enable_pose_csv_logging = false;
+    } else {
+      std::error_code ec;
+      const auto csv_path = std::filesystem::path(params_.pose_csv_path);
+      const auto parent_dir = csv_path.parent_path();
+      if (!parent_dir.empty() && !std::filesystem::exists(parent_dir) &&
+        !std::filesystem::create_directories(parent_dir, ec))
+      {
+        RCLCPP_ERROR(get_logger(), "Failed to create directory %s for pose CSV: %s", parent_dir.string().c_str(),
+          ec.message().c_str());
+        params_.enable_pose_csv_logging = false;
+      } else {
+        pose_csv_stream_.open(params_.pose_csv_path, std::ios::out | std::ios::trunc);
+        if (!pose_csv_stream_.is_open()) {
+          RCLCPP_ERROR(get_logger(), "Failed to open pose CSV file: %s", params_.pose_csv_path.c_str());
+          params_.enable_pose_csv_logging = false;
+        } else {
+          pose_csv_stream_ << "stamp_sec,stamp_nanosec,x,y,z,roll,pitch,yaw,velocity" << std::endl;
+          pose_csv_header_written_ = true;
+        }
+      }
+    }
+  }
+
   const auto sensor_qos = rclcpp::SensorDataQoS();
 
   gnss_sub_ = create_subscription<sensor_msgs::msg::NavSatFix>(
@@ -80,9 +110,17 @@ GnssImuWheelLocalizerNode::GnssImuWheelLocalizerNode(const rclcpp::NodeOptions &
     params_.imu_topic, sensor_qos,
     std::bind(&GnssImuWheelLocalizerNode::handleImu, this, std::placeholders::_1));
 
-  wheel_sub_ = create_subscription<nav_msgs::msg::Odometry>(
-    params_.wheel_odom_topic, sensor_qos,
-    std::bind(&GnssImuWheelLocalizerNode::handleWheelOdometry, this, std::placeholders::_1));
+  if (!params_.wheel_odom_topic.empty()) {
+    wheel_sub_ = create_subscription<nav_msgs::msg::Odometry>(
+      params_.wheel_odom_topic, sensor_qos,
+      std::bind(&GnssImuWheelLocalizerNode::handleWheelOdometry, this, std::placeholders::_1));
+  }
+
+  if (!params_.velocity_report_topic.empty()) {
+    velocity_report_sub_ = create_subscription<autoware_vehicle_msgs::msg::VelocityReport>(
+      params_.velocity_report_topic, sensor_qos,
+      std::bind(&GnssImuWheelLocalizerNode::handleVelocityReport, this, std::placeholders::_1));
+  }
 
   odom_pub_ = create_publisher<nav_msgs::msg::Odometry>("~/odometry", 10);
   pose_pub_ = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("~/pose", 10);
@@ -96,7 +134,8 @@ void GnssImuWheelLocalizerNode::declareAndLoadParameters()
 {
   params_.gnss_topic = declare_parameter<std::string>("gnss_topic", "/sensing/gnss/fix");
   params_.imu_topic = declare_parameter<std::string>("imu_topic", "/sensing/imu/imu_data");
-  params_.wheel_odom_topic = declare_parameter<std::string>("wheel_odom_topic", "/localization/kinematic_state");
+  params_.wheel_odom_topic = declare_parameter<std::string>("wheel_odom_topic", "");
+  params_.velocity_report_topic = declare_parameter<std::string>("velocity_report_topic", "");
 
   params_.map_frame = declare_parameter<std::string>("map_frame", "map");
   params_.odom_frame = declare_parameter<std::string>("odom_frame", "odom");
@@ -110,6 +149,9 @@ void GnssImuWheelLocalizerNode::declareAndLoadParameters()
   params_.origin_latitude = declare_parameter<double>("origin_latitude", 0.0);
   params_.origin_longitude = declare_parameter<double>("origin_longitude", 0.0);
   params_.origin_altitude = declare_parameter<double>("origin_altitude", 0.0);
+
+  params_.enable_pose_csv_logging = declare_parameter<bool>("enable_pose_csv_logging", false);
+  params_.pose_csv_path = declare_parameter<std::string>("pose_csv_path", "");
 
   const auto process_noise_diagonal = declare_parameter<std::vector<double>>(
     "process_noise_diagonal", {0.5, 0.5, 0.5, 0.1, 0.1, 0.1, 1.0});
@@ -263,6 +305,45 @@ void GnssImuWheelLocalizerNode::handleWheelOdometry(const nav_msgs::msg::Odometr
   measurement << latest_wheel_velocity_;
 
   Eigen::Matrix<double, 1, ExtendedKalmanFilter::kStateDim> H = Eigen::Matrix<double, 1, ExtendedKalmanFilter::kStateDim>::Zero();
+  H(0, static_cast<std::size_t>(ExtendedKalmanFilter::StateIndex::VELOCITY)) = 1.0;
+
+  Eigen::Matrix<double, 1, 1> R;
+  R(0, 0) = params_.wheel_velocity_noise;
+
+  ekf_.update(measurement, H, R);
+
+  publishOutputs(msg->header.stamp);
+}
+
+void GnssImuWheelLocalizerNode::handleVelocityReport(
+  const autoware_vehicle_msgs::msg::VelocityReport::SharedPtr msg)
+{
+  // TODO(gnss_imu_wheel_localizer): CSV logging remains empty when replaying
+  // sample-rosbag_0.db3 because the EKF never reaches publishOutputs().
+  // Investigate VelocityReport/GNSS validity to resolve before enabling
+  // automated regression tests.
+  const double velocity = msg->longitudinal_velocity;
+  if (std::isfinite(velocity)) {
+    process_input_.linear_velocity = velocity;
+    latest_wheel_velocity_ = velocity;
+    wheel_velocity_available_ = true;
+  }
+
+  if (std::isfinite(msg->heading_rate)) {
+    process_input_.yaw_rate = msg->heading_rate;
+  }
+
+  if (!ekf_.isInitialized()) {
+    return;
+  }
+
+  predictToStamp(msg->header.stamp);
+
+  Eigen::Matrix<double, 1, 1> measurement;
+  measurement << latest_wheel_velocity_;
+
+  Eigen::Matrix<double, 1, ExtendedKalmanFilter::kStateDim> H =
+    Eigen::Matrix<double, 1, ExtendedKalmanFilter::kStateDim>::Zero();
   H(0, static_cast<std::size_t>(ExtendedKalmanFilter::StateIndex::VELOCITY)) = 1.0;
 
   Eigen::Matrix<double, 1, 1> R;
@@ -463,6 +544,8 @@ void GnssImuWheelLocalizerNode::publishOutputs(const rclcpp::Time & stamp)
     transform.transform.rotation = orientation_msg;
     tf_broadcaster_->sendTransform(transform);
   }
+
+  maybeWritePoseCsv(stamp, x, y, z, roll, pitch, yaw, velocity);
 }
 
 ExtendedKalmanFilter::CovarianceMatrix GnssImuWheelLocalizerNode::makeDiagonalMatrix(
@@ -474,6 +557,41 @@ ExtendedKalmanFilter::CovarianceMatrix GnssImuWheelLocalizerNode::makeDiagonalMa
     matrix(i, i) = diagonal[i];
   }
   return matrix;
+}
+
+void GnssImuWheelLocalizerNode::maybeWritePoseCsv(
+  const rclcpp::Time & stamp,
+  double x,
+  double y,
+  double z,
+  double roll,
+  double pitch,
+  double yaw,
+  double velocity)
+{
+  if (!params_.enable_pose_csv_logging || !pose_csv_stream_.is_open()) {
+    return;
+  }
+
+  if (!pose_csv_header_written_) {
+    pose_csv_stream_ << "stamp_sec,stamp_nanosec,x,y,z,roll,pitch,yaw,velocity" << std::endl;
+    pose_csv_header_written_ = true;
+  }
+
+  const auto total_nanoseconds = stamp.nanoseconds();
+  const auto stamp_sec = static_cast<int64_t>(total_nanoseconds / 1000000000LL);
+  const auto stamp_nanosec = static_cast<int64_t>(total_nanoseconds % 1000000000LL);
+
+  pose_csv_stream_ << stamp_sec << ','
+                   << stamp_nanosec << ','
+                   << x << ','
+                   << y << ','
+                   << z << ','
+                   << roll << ','
+                   << pitch << ','
+                   << yaw << ','
+                   << velocity
+                   << std::endl;
 }
 
 }  // namespace gnss_imu_wheel_localizer

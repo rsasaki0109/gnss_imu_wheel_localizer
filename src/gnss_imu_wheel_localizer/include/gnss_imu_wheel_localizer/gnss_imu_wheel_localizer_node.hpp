@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <fstream>
 #include <memory>
 #include <string>
 
@@ -12,6 +13,8 @@
 #include <sensor_msgs/msg/imu.hpp>
 #include <sensor_msgs/msg/nav_sat_fix.hpp>
 #include <tf2_ros/transform_broadcaster.h>
+
+#include <autoware_vehicle_msgs/msg/velocity_report.hpp>
 
 #include "gnss_imu_wheel_localizer/extended_kalman_filter.hpp"
 
@@ -29,6 +32,7 @@ private:
     std::string gnss_topic;
     std::string imu_topic;
     std::string wheel_odom_topic;
+    std::string velocity_report_topic;
 
     std::string map_frame;
     std::string odom_frame;
@@ -42,6 +46,9 @@ private:
     double origin_latitude{0.0};
     double origin_longitude{0.0};
     double origin_altitude{0.0};
+
+    bool enable_pose_csv_logging{false};
+    std::string pose_csv_path;
 
     std::array<double, ExtendedKalmanFilter::kStateDim> process_noise_diagonal{};
     std::array<double, ExtendedKalmanFilter::kStateDim> initial_covariance_diagonal{};
@@ -57,6 +64,7 @@ private:
   void handleGnss(const sensor_msgs::msg::NavSatFix::SharedPtr msg);
   void handleImu(const sensor_msgs::msg::Imu::SharedPtr msg);
   void handleWheelOdometry(const nav_msgs::msg::Odometry::SharedPtr msg);
+  void handleVelocityReport(const autoware_vehicle_msgs::msg::VelocityReport::SharedPtr msg);
 
   void initializeOriginIfNeeded(const sensor_msgs::msg::NavSatFix & msg);
   void maybeInitializeFilter(
@@ -68,6 +76,15 @@ private:
 
   void predictToStamp(const rclcpp::Time & stamp);
   void publishOutputs(const rclcpp::Time & stamp);
+  void maybeWritePoseCsv(
+    const rclcpp::Time & stamp,
+    double x,
+    double y,
+    double z,
+    double roll,
+    double pitch,
+    double yaw,
+    double velocity);
 
   ExtendedKalmanFilter::CovarianceMatrix makeDiagonalMatrix(
     const std::array<double, ExtendedKalmanFilter::kStateDim> & diagonal) const;
@@ -85,6 +102,7 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::NavSatFix>::SharedPtr gnss_sub_;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr wheel_sub_;
+  rclcpp::Subscription<autoware_vehicle_msgs::msg::VelocityReport>::SharedPtr velocity_report_sub_;
 
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pose_pub_;
@@ -98,6 +116,9 @@ private:
   double latest_pitch_{0.0};
   double latest_yaw_{0.0};
   bool attitude_available_{false};
+
+  std::ofstream pose_csv_stream_;
+  bool pose_csv_header_written_{false};
 };
 
 }  // namespace gnss_imu_wheel_localizer

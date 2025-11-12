@@ -41,7 +41,7 @@ public:
 
   void predict(const ProcessModelInput & input, double dt, const CovarianceMatrix & process_noise);
 
-  template<std::size_t MeasurementDim>
+  template<int MeasurementDim>
   void update(
     const Eigen::Matrix<double, MeasurementDim, 1> & measurement,
     const Eigen::Matrix<double, MeasurementDim, kStateDim> & observation_matrix,
