@@ -1,8 +1,9 @@
 gnss_imu_wheel_localizer:
   ros__parameters:
-    gnss_topic: "/sensing/gnss/fix"
-    imu_topic: "/sensing/imu/imu_data"
+    gnss_topic: "/sensing/gnss/ublox/nav_sat_fix"
+    imu_topic: "/sensing/imu/tamagawa/imu_raw"
     wheel_odom_topic: "/localization/kinematic_state"
+    velocity_report_topic: "/vehicle/status/velocity_status"
 
     map_frame: "map"
     odom_frame: "odom"
@@ -16,6 +17,9 @@ gnss_imu_wheel_localizer:
     origin_latitude: 0.0
     origin_longitude: 0.0
     origin_altitude: 0.0
+
+    enable_pose_csv_logging: true
+    pose_csv_path: "/home/autoware/ros2_ws/data/gnss_imu_wheel_localizer/pose.csv"
 
     process_noise_diagonal: [0.5, 0.5, 0.5, 0.1, 0.1, 0.1, 1.0]
     initial_covariance_diagonal: [5.0, 5.0, 5.0, 0.5, 0.5, 0.5, 1.0]
