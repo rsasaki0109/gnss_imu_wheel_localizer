@@ -14,7 +14,7 @@
 #include <sensor_msgs/msg/nav_sat_fix.hpp>
 #include <tf2_ros/transform_broadcaster.h>
 
-#include <autoware_vehicle_msgs/msg/velocity_report.hpp>
+
 
 #include "gnss_imu_wheel_localizer/extended_kalman_filter.hpp"
 
@@ -32,7 +32,7 @@ private:
     std::string gnss_topic;
     std::string imu_topic;
     std::string wheel_odom_topic;
-    std::string velocity_report_topic;
+
 
     std::string map_frame;
     std::string odom_frame;
@@ -64,7 +64,6 @@ private:
   void handleGnss(const sensor_msgs::msg::NavSatFix::SharedPtr msg);
   void handleImu(const sensor_msgs::msg::Imu::SharedPtr msg);
   void handleWheelOdometry(const nav_msgs::msg::Odometry::SharedPtr msg);
-  void handleVelocityReport(const autoware_vehicle_msgs::msg::VelocityReport::SharedPtr msg);
 
   void initializeOriginIfNeeded(const sensor_msgs::msg::NavSatFix & msg);
   void maybeInitializeFilter(
@@ -102,7 +101,7 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::NavSatFix>::SharedPtr gnss_sub_;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr wheel_sub_;
-  rclcpp::Subscription<autoware_vehicle_msgs::msg::VelocityReport>::SharedPtr velocity_report_sub_;
+
 
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pose_pub_;
