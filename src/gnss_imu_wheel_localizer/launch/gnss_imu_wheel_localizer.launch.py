@@ -41,6 +41,19 @@ def generate_launch_description():
         default_value='false',
         description='Loop rosbag playback when true')
 
+    enable_pose_csv_logging_arg = DeclareLaunchArgument(
+        'enable_pose_csv_logging',
+        default_value='true',
+        description='Enable pose CSV logging')
+
+    pose_csv_path_arg = DeclareLaunchArgument(
+        'pose_csv_path',
+        default_value='/tmp/gnss_imu_wheel_localizer/pose.csv',
+        description='Path to pose CSV file')
+
+    enable_pose_csv_logging = LaunchConfiguration('enable_pose_csv_logging')
+    pose_csv_path = LaunchConfiguration('pose_csv_path')
+
     container = ComposableNodeContainer(
         name='localization_container',
         namespace='',
@@ -51,7 +64,11 @@ def generate_launch_description():
                 package=package_name,
                 plugin='gnss_imu_wheel_localizer::GnssImuWheelLocalizerNode',
                 name='gnss_imu_wheel_localizer',
-                parameters=[params],
+                parameters=[
+                    params,
+                    {'enable_pose_csv_logging': enable_pose_csv_logging},
+                    {'pose_csv_path': pose_csv_path},
+                ],
                 remappings=[
                     ('~/odometry', 'localization/gnss_imu_wheel_localizer/odometry'),
                     ('~/pose', 'localization/gnss_imu_wheel_localizer/pose'),
@@ -65,7 +82,11 @@ def generate_launch_description():
         package=package_name,
         executable='gnss_imu_wheel_localizer_node',
         name='gnss_imu_wheel_localizer',
-        parameters=[params],
+        parameters=[
+            params,
+            {'enable_pose_csv_logging': enable_pose_csv_logging},
+            {'pose_csv_path': pose_csv_path},
+        ],
         remappings=[
             ('~/odometry', 'localization/gnss_imu_wheel_localizer/odometry'),
             ('~/pose', 'localization/gnss_imu_wheel_localizer/pose'),
@@ -103,6 +124,8 @@ def generate_launch_description():
         play_rosbag_arg,
         rosbag_path_arg,
         rosbag_loop_arg,
+        enable_pose_csv_logging_arg,
+        pose_csv_path_arg,
         container,
         rosbag_group,
         # Comment out the following line if only component mode is required.

@@ -16,7 +16,7 @@
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
-#include <autoware_vehicle_msgs/msg/velocity_report.hpp>
+
 
 namespace gnss_imu_wheel_localizer
 {
@@ -116,11 +116,7 @@ GnssImuWheelLocalizerNode::GnssImuWheelLocalizerNode(const rclcpp::NodeOptions &
       std::bind(&GnssImuWheelLocalizerNode::handleWheelOdometry, this, std::placeholders::_1));
   }
 
-  if (!params_.velocity_report_topic.empty()) {
-    velocity_report_sub_ = create_subscription<autoware_vehicle_msgs::msg::VelocityReport>(
-      params_.velocity_report_topic, sensor_qos,
-      std::bind(&GnssImuWheelLocalizerNode::handleVelocityReport, this, std::placeholders::_1));
-  }
+
 
   odom_pub_ = create_publisher<nav_msgs::msg::Odometry>("~/odometry", 10);
   pose_pub_ = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("~/pose", 10);
@@ -135,7 +131,7 @@ void GnssImuWheelLocalizerNode::declareAndLoadParameters()
   params_.gnss_topic = declare_parameter<std::string>("gnss_topic", "/sensing/gnss/fix");
   params_.imu_topic = declare_parameter<std::string>("imu_topic", "/sensing/imu/imu_data");
   params_.wheel_odom_topic = declare_parameter<std::string>("wheel_odom_topic", "");
-  params_.velocity_report_topic = declare_parameter<std::string>("velocity_report_topic", "");
+
 
   params_.map_frame = declare_parameter<std::string>("map_frame", "map");
   params_.odom_frame = declare_parameter<std::string>("odom_frame", "odom");
@@ -244,6 +240,8 @@ void GnssImuWheelLocalizerNode::handleImu(const sensor_msgs::msg::Imu::SharedPtr
   process_input_.yaw_rate = msg->angular_velocity.z;
   process_input_.longitudinal_acceleration = msg->linear_acceleration.x;
 
+  // Store latest orientation for initialization purposes only
+  // Do NOT use IMU orientation for observation updates
   const auto [roll, pitch, yaw] = quaternionToRPY(msg->orientation);
   latest_roll_ = roll;
   latest_pitch_ = pitch;
@@ -256,32 +254,8 @@ void GnssImuWheelLocalizerNode::handleImu(const sensor_msgs::msg::Imu::SharedPtr
 
   predictToStamp(msg->header.stamp);
 
-  Eigen::Matrix<double, 1, 1> measurement;
-  measurement << yaw;
-
-  Eigen::Matrix<double, 1, ExtendedKalmanFilter::kStateDim> H = Eigen::Matrix<double, 1, ExtendedKalmanFilter::kStateDim>::Zero();
-  H(0, static_cast<std::size_t>(ExtendedKalmanFilter::StateIndex::YAW)) = 1.0;
-
-  Eigen::Matrix<double, 1, 1> R;
-  R(0, 0) = params_.imu_yaw_noise;
-
-  ekf_.update(measurement, H, R);
-
-  if (params_.use_attitude) {
-    Eigen::Matrix<double, 2, 1> attitude_measurement;
-    attitude_measurement << roll, pitch;
-
-    Eigen::Matrix<double, 2, ExtendedKalmanFilter::kStateDim> H_att =
-      Eigen::Matrix<double, 2, ExtendedKalmanFilter::kStateDim>::Zero();
-    H_att(0, static_cast<std::size_t>(ExtendedKalmanFilter::StateIndex::ROLL)) = 1.0;
-    H_att(1, static_cast<std::size_t>(ExtendedKalmanFilter::StateIndex::PITCH)) = 1.0;
-
-    Eigen::Matrix<double, 2, 2> R_att = Eigen::Matrix<double, 2, 2>::Zero();
-    R_att(0, 0) = params_.imu_attitude_noise;
-    R_att(1, 1) = params_.imu_attitude_noise;
-
-    ekf_.update(attitude_measurement, H_att, R_att);
-  }
+  // Yaw angle is estimated by EKF using vehicle velocity and yaw_rate
+  // Do not perform observation update with IMU orientation
 
   publishOutputs(msg->header.stamp);
 }
@@ -315,44 +289,7 @@ void GnssImuWheelLocalizerNode::handleWheelOdometry(const nav_msgs::msg::Odometr
   publishOutputs(msg->header.stamp);
 }
 
-void GnssImuWheelLocalizerNode::handleVelocityReport(
-  const autoware_vehicle_msgs::msg::VelocityReport::SharedPtr msg)
-{
-  // TODO(gnss_imu_wheel_localizer): CSV logging remains empty when replaying
-  // sample-rosbag_0.db3 because the EKF never reaches publishOutputs().
-  // Investigate VelocityReport/GNSS validity to resolve before enabling
-  // automated regression tests.
-  const double velocity = msg->longitudinal_velocity;
-  if (std::isfinite(velocity)) {
-    process_input_.linear_velocity = velocity;
-    latest_wheel_velocity_ = velocity;
-    wheel_velocity_available_ = true;
-  }
 
-  if (std::isfinite(msg->heading_rate)) {
-    process_input_.yaw_rate = msg->heading_rate;
-  }
-
-  if (!ekf_.isInitialized()) {
-    return;
-  }
-
-  predictToStamp(msg->header.stamp);
-
-  Eigen::Matrix<double, 1, 1> measurement;
-  measurement << latest_wheel_velocity_;
-
-  Eigen::Matrix<double, 1, ExtendedKalmanFilter::kStateDim> H =
-    Eigen::Matrix<double, 1, ExtendedKalmanFilter::kStateDim>::Zero();
-  H(0, static_cast<std::size_t>(ExtendedKalmanFilter::StateIndex::VELOCITY)) = 1.0;
-
-  Eigen::Matrix<double, 1, 1> R;
-  R(0, 0) = params_.wheel_velocity_noise;
-
-  ekf_.update(measurement, H, R);
-
-  publishOutputs(msg->header.stamp);
-}
 
 void GnssImuWheelLocalizerNode::initializeOriginIfNeeded(const sensor_msgs::msg::NavSatFix & msg)
 {
