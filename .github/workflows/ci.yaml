@@ -12,22 +12,27 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    container:
+      image: ros:humble
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: ROS 2 CI
-        uses: ros-tooling/action-ros-ci@v0.3
-        with:
-          target-ros2-distro: humble
-          package-name: gnss_imu_wheel_localizer
-          colcon-defaults: |
-            {
-              "build": {
-                "mixin": ["release"]
-              },
-              "test": {
-                "mixin": ["release"]
-              }
-            }
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y python3-colcon-common-extensions python3-rosdep
+          rosdep update
+          rosdep install --from-paths . --ignore-src -y
+
+      - name: Build
+        run: |
+          . /opt/ros/humble/setup.sh
+          colcon build --packages-select gnss_imu_wheel_localizer
+
+      - name: Test
+        run: |
+          . /opt/ros/humble/setup.sh
+          colcon test --packages-select gnss_imu_wheel_localizer
+          colcon test-result --verbose
