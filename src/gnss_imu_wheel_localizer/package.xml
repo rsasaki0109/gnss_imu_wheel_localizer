@@ -19,13 +19,7 @@
   <depend>tf2_geometry_msgs</depend>
   <depend>tf2_eigen</depend>
 
-  <build_depend>Eigen3</build_depend>
-  <build_depend>GeographicLib</build_depend>
-  <build_export_depend>Eigen3</build_export_depend>
-  <build_export_depend>GeographicLib</build_export_depend>
-
-  <exec_depend>Eigen3</exec_depend>
-  <exec_depend>GeographicLib</exec_depend>
+  <depend>eigen</depend>
 
   <test_depend>ament_cmake_gtest</test_depend>
 
