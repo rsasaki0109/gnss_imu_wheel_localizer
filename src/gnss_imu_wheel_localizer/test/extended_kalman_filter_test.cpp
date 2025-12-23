@@ -106,8 +106,13 @@ TEST(ExtendedKalmanFilterTest, UpdateCorrectsStateWithMeasurement)
   ekf.update(measurement, observation_matrix, observation_noise);
 
   const auto & updated_state = ekf.getState();
+  // Kalman gain K = P * H^T * (H * P * H^T + R)^-1 = 0.5 / (0.5 + 0.1) = 0.833...
+  // updated_x = 0 + K * (2.0 - 0) = 1.666...
+  // updated_y = 0 + K * (0.5 - 0) = 0.416...
+  const double expected_x = 2.0 * 0.5 / (0.5 + 0.1);
+  const double expected_y = 0.5 * 0.5 / (0.5 + 0.1);
   EXPECT_NEAR(updated_state(static_cast<std::size_t>(giwl::ExtendedKalmanFilter::StateIndex::X)),
-    2.0, 1.0e-3);
+    expected_x, 1.0e-6);
   EXPECT_NEAR(updated_state(static_cast<std::size_t>(giwl::ExtendedKalmanFilter::StateIndex::Y)),
-    0.5, 1.0e-3);
+    expected_y, 1.0e-6);
 }
