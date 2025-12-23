@@ -22,7 +22,7 @@ jobs:
       - name: Install dependencies
         run: |
           apt-get update
-          apt-get install -y python3-colcon-common-extensions python3-rosdep
+          apt-get install -y python3-colcon-common-extensions python3-rosdep libgeographic-dev
           rosdep update
           rosdep install --from-paths . --ignore-src -y
 
