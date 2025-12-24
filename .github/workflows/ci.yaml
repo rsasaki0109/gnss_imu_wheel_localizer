@@ -22,9 +22,9 @@ jobs:
       - name: Install dependencies
         run: |
           apt-get update
-          apt-get install -y python3-colcon-common-extensions python3-rosdep libgeographic-dev
+          apt-get install -y python3-colcon-common-extensions python3-rosdep
           rosdep update
-          rosdep install --from-paths . --ignore-src -y --skip-keys="GeographicLib"
+          rosdep install --from-paths . --ignore-src -y
 
       - name: Build
         run: |
